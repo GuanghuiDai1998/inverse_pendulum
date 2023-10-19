@@ -1,0 +1,422 @@
+#一阶倒立摆的PID控制和LQR控制
+##建模与分析
+一个可以活动的小车上立着一根不稳定随时会倒下的杆。小车的轮子由电机控制，可以控制小车电机的转动力矩M。同时，也可以获取小车轮子转动的圈数N（可以精确到小数）和杆相对于垂直位置的倾角α.  
+<div align=center>
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fwuyvylzo3j3069057td0.jpg)
+<div align=left>
+不考虑车轮打滑, 小车所受力大小等于电机力矩乘车轮半径, 小车位置可以从转动圈数计算出, 小车可简化为最经典的一阶倒立摆:  
+<div align=center>
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fwuyusgsoxj308x08jwer.jpg)
+<div align=left>
+
+名字	| 意义			| 举例值|
+------|--------------------|------|
+M		|小车质量				|0.5 kg
+m		|摆的质量				|0.2 kg
+l		|摆的重心到关节的距离	|0.3 m
+I		|摆的转动惯量			|0.018 kg.m^2
+b		|阻尼系数				|0.1 N/m/sec
+F		|作用在小车的力	
+x		|小车的位置
+$$\theta$$| 摆的角度
+###受力分析与方程建立
+<div align=center>
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fwuzwulqu7j308108hjrl.jpg)
+<div align=left>
+
+对小车水平方向:  
+$$M\ddot x+b\dot x + N =F$$
+对摆水平方向:  
+
+$$H=M\frac{d^2}{dt}(x+lsin\theta)$$  
+
+即:  
+$$H=m\ddot x+ml\ddot \theta cos\ddot \theta - ml\dot \theta^2 sin \theta$$  
+
+对摆垂直方向:  
+$$P=mg+ m\frac{d^2}{dt}(lcos\theta)$$
+
+即:  
+$$P=mg - ml\ddot \theta sin\ddot \theta - ml\dot \theta^2 cos \theta$$  
+
+关节力矩:
+
+$$-Plsin\theta - Nlcos\theta = I\theta^2$$  
+
+令$$\phi = \pi +\theta$$  
+
+在工作点$$\theta \approx 0 $$进行线性化:  $$sin\theta = 0 \space , cos\theta=1 $$
+经过一顿操作化简之后能得到:
+
+$$
+(I+ml^2)\ddot \phi - mgl\phi = ml\ddot x \\
+(M+m)\ddot x+b\dot x-ml\ddot \phi = F =u
+$$
+###传递函数表示
+进行拉普拉斯变换得到:  
+
+$$
+(I+ml^2)\Phi(s)s^2 - mgl\Phi(s) = mlX(s)s^2 \\
+(M+m)X(s)s^2+bX(s)s-ml\Phi(s)s^2 = U(s)
+$$
+
+一顿操作得到摆的角度的传递函数:
+
+$$
+P_{pend}(s) = \frac{\Phi(s)}{U(s)} = \frac{mls}{qs^3+b(I+ml^2)s^2-(M+m)mgls-bmgl}
+$$
+
+小车位置的传递函数:
+$$
+P_{cart}(s) = \frac{X(s)}{U(s)} = \frac{(I+ml^2)s^2-mgl}{qs^4+b(I+ml^2)s^3-(M+m)mgls^2-bmgls}
+$$
+
+其中$$q$$为:
+$$
+q = [(M+m)(I+ml^2)-(ml)^2]
+$$
+
+Matlab代码:  
+
+```  
+%Modeling
+%%Transfer Function
+mCart = 0.5;
+mPend = 0.2;
+b = 0.1;
+I = 0.018;
+g = 9.8;
+L = 0.3;
+q = (mCart+mPend)*(I+mPend*L^2)-(mPend*L)^2;
+s = tf('s');
+
+P_cart = (((I+mPend*L^2)/q)*s^2 - (mPend*g*L/q))/(s^4 + (b*(I + mPend*L^2))*s^3/q - ((mCart + mPend)*mPend*g*L)*s^2/q - b*mPend*g*L*s/q);
+P_pend = (mPend*L*s/q)/(s^3 + (b*(I + mPend*L^2))*s^2/q - ((mCart + mPend)*mPend*g*L)*s/q - b*mPend*g*L/q);
+
+sys_tf = [P_cart ; P_pend]
+
+inputs = {'u'};
+outputs = {'x'; 'phi'};
+
+set(sys_tf,'InputName',inputs)
+set(sys_tf,'OutputName',outputs)
+
+```  
+输出
+
+```  
+sys_tf =
+ 
+  From input to output...
+                       1.68e-05 s^2 - 0.0002743
+   1:  ---------------------------------------------------------
+       1.008e-05 s^4 + 1.68e-06 s^3 - 0.000192 s^2 - 2.743e-05 s
+ 
+                            2.799e-05 s
+   2:  -----------------------------------------------------
+       1.008e-05 s^3 + 1.68e-06 s^2 - 0.000192 s - 2.743e-05
+ 
+Continuous-time transfer function.
+
+
+```  
+###状态空间表示
+
+$$
+\dot x = Ax+Bu \\
+y = Cx + Du
+$$
+
+其中:
+
+$$
+A = 
+ \left[
+ \begin{matrix}
+   0 & 1 & 0 & 0 \\
+   0 & -\frac{(I+ml^2)b}{p} & \frac{m^2gl^2}{p} & 0 \\
+   0 & 0 & 0 & 1\\
+   0 & \frac{-mlb}{p} & \frac{mgl(M+m)}{p} &0
+  \end{matrix}
+  \right]
+\\
+$$
+$$
+B =
+ \left[
+ \begin{matrix}
+   0\\
+   \frac{I+ml^2}{p}\\
+   0\\
+   \frac{ml}{p}
+  \end{matrix}
+  \right]
+$$
+$$
+C = 
+ \left[
+ \begin{matrix}
+   1 & 0 & 0 & 0\\
+   0 & 0 & 1 & 0
+  \end{matrix}
+  \right]
+$$
+$$
+D =
+ \left[
+ \begin{matrix}
+   0\\
+   0
+  \end{matrix}
+  \right]
+$$
+$$
+x =
+ \left[
+ \begin{matrix}
+   x\\
+   \dot x\\
+   \phi\\
+   \dot \phi
+  \end{matrix}
+  \right]
+$$
+$$
+p = I(M+m)+Mml^2
+$$  
+
+Matlab代码:
+
+```
+p = I*(mCart+mPend)+mCart*mPend*L^2;
+
+A = [0      1              0           0;
+     0 -(I+mPend*L^2)*b/p  (mPend^2*g*L^2)/p   0;
+     0      0              0           1;
+     0 -(mPend*L*b)/p       mPend*g*L*(mCart+mPend)/p  0];
+B = [     0;
+     (I+mPend*L^2)/p;
+          0;
+        mPend*L/p];
+C = [1 0 0 0;
+     0 0 1 0];
+D = [0;
+     0];
+
+states = {'x' 'x_dot' 'phi' 'phi_dot'};
+inputs = {'u'};
+outputs = {'x'; 'phi'};
+
+sys_ss = ss(A,B,C,D,'statename',states,'inputname',inputs,'outputname',outputs)
+
+```  
+输出:  
+ 
+```  
+p = I*(mCart+mPend)+mCart*mPend*L^2;
+
+A = [0      1              0           0;
+     0 -(I+mPend*L^2)*b/p  (mPend^2*g*L^2)/p   0;
+     0      0              0           1;
+     0 -(mPend*L*b)/p       mPend*g*L*(mCart+mPend)/p  0];
+B = [     0;
+     (I+mPend*L^2)/p;
+          0;
+        mPend*L/p];
+C = [1 0 0 0;
+     0 0 1 0];
+D = [0;
+     0];
+
+states = {'x' 'x_dot' 'phi' 'phi_dot'};
+inputs = {'u'};
+outputs = {'x'; 'phi'};
+
+sys_ss = ss(A,B,C,D,'statename',states,'inputname',inputs,'outputname',outputs)
+
+```
+###分析
+####极点
+经过目测分析🙄, 系统应该是不稳定的, 求一下极点
+
+```
+pole(sys_tf)
+```
+输出:
+
+```
+ans =
+
+         0
+    4.3538
+   -4.3776
+   -0.1428
+```
+可以看到极点没有都在复平面的左边面(left-half plane (LHP)), 系统不稳定. 
+ 
+####开环扰动响应
+```
+t=0:0.01:1;
+impulse(sys_ss,t)
+```
+![](https://ws3.sinaimg.cn/large/006tNbRwgy1fwv6edwatxj30v40nc3ze.jpg)
+
+####开环阶跃响应
+```
+t = 0:0.05:1;
+u = ones(size(t));
+[y,t] = lsim(sys_tf,u,t);
+figure
+plot(t,y)
+title('Open-Loop Step Response')
+axis([0 3 0 50])
+legend('x','phi')
+```
+![](https://ws4.sinaimg.cn/large/006tNbRwgy1fwv6k9olntj30v40ncjs4.jpg)
+
+###使用Simscape Multibody建立非线性模型并仿真
+一共有两种模型:  
+1.输出是小车位置和角度, 用于PID控制和LQR控制仿真(observer based)
+![](https://ws2.sinaimg.cn/large/006tNbRwgy1fwv6rcxn5tj31kw0sxn2m.jpg)
+2.输出是小车位置, 小车速度, 角度, 角加速度, 用作full state的LQR控制仿真
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fwv6z40stjj31kw0t1q8m.jpg)
+
+开环扰动响应的仿真:
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fwv74mqzzsj31kw0ud77r.jpg)
+因为没有在工作点线性化, 仿真结果和实际更相似,摆(蓝色线)一直往一个方向转动,速度起伏较大, 小车也一直往一个方向运动.
+![](https://ws4.sinaimg.cn/large/006tNbRwgy1fwv945shg7g30i00aiamf.gif)
+##PID控制
+###角度控制
+很简单PID怼上去, 玄学调参, 测试扰动响应:
+
+```
+Kp = 100;
+Ki = 1;
+Kd = 30;
+C = pid(Kp,Ki,Kd);
+T1 = feedback(P_pend,C);
+
+t=0:0.01:4;
+impulse(T1,t)
+```
+![](https://ws4.sinaimg.cn/large/006tNbRwgy1fwv8ej9j1sj30v40ncmxw.jpg)
+挺好的, 但是这时候的小车...
+
+```
+T2 = feedback(1,P_pend*C)*P_cart;
+t = 0:0.01:5;
+impulse(T2, t);
+```
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fwv8h40q3vj30v40ncjs2.jpg)
+经过一阵哆嗦之后一直匀速运动, 这个时候摆的摆也和小车一起作匀速直线运动.
+在Simscape 仿真下也是如此:
+![](https://ws4.sinaimg.cn/large/006tNbRwgy1fwv8qx2brzj31kw0t077s.jpg)
+![](https://ws4.sinaimg.cn/large/006tNbRwgy1fxk2xo8tcaj30v40m0q44.jpg)
+![](https://ws2.sinaimg.cn/large/006tNbRwgy1fwvz4offl1g30i00aiq4p.gif)
+###位置控制
+一个很朴素的想法, 在平衡小车控制中非常常见, 使用两个闭环:  
+
+* 保持杆的角度, 输入为杆的角度误差, 输出为力的大小 
+* 保持杆的角度, 输入为小车的位置误差, 输出为杆的倾斜角度
+
+![](https://ws4.sinaimg.cn/large/006tNbRwgy1fxk92ws4bsj31mx0u0djm.jpg)
+![](https://ws2.sinaimg.cn/large/006tNbRwgy1fxk95dcv5jj31k70u0q6m.jpg)
+
+控制效果很差...
+##LQR控制
+对于这种MIMO的系统, 当然要用现代一点的控制方式啦
+###全状态反馈(Full state feedback)
+先不考虑观测器, 如果可以得到小车和摆的所有状态, 我们使用全状态反馈控制
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fxk9m22mvnj30bu06st90.jpg)
+![](https://ws3.sinaimg.cn/large/006tNbRwgy1fxkb4ozt10j31n00u078f.jpg)
+通过设定K矩阵的值, 我们可以把系统的极点放到任何地方.
+
+随便放置极点(在左半面)
+
+```
+p1 = -10 + 10i;
+p2 = -10 - 10i;
+p3 = -15 + 10i;
+p4 = -15 - 10i;
+
+K = place(A,B,[p1 p2 p3 p4]);
+
+Ac = (A-B*K);
+Bc = B;
+Cc = C;
+Dc = D;
+
+states = {'x' 'x_dot' 'phi' 'phi_dot'};
+inputs = {'r'};
+outputs = {'x'; 'phi'};
+
+sys_cl = ss(Ac,Bc,Cc,Dc,'statename',states,'inputname',inputs,'outputname',outputs);
+
+t = 0:0.01:10;
+r =0.2*ones(size(t));
+
+Cn = [1 0 0 0];
+sys_ss = ss(A,B,Cn,0);
+Nbar = rscale(sys_ss,K);
+
+[y,t,x]=lsim(sys_cl,r,t);
+[AX,H1,H2] = plotyy(t,y(:,1),t,y(:,2),'plot');
+set(get(AX(1),'Ylabel'),'String','cart position (m)')
+set(get(AX(2),'Ylabel'),'String','pendulum angle (radians)')
+title('Step Response with LQR Control')
+
+```
+结果:
+![](https://ws2.sinaimg.cn/large/006tNbRwgy1fxka3uf689j30v40ncjs9.jpg)
+Simscape仿真:
+
+![](https://ws2.sinaimg.cn/large/006tNbRwgy1fxkartwvo0j30v40m0q4b.jpg)
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fxkabpb0npg30hz08eqvg.gif)
+
+###使用LQR放置极点
+选定$$R=1,Q(1,1) = 1,Q(3,3) = 100$$
+
+```
+Q = C'*C
+Q(1,1) = 1;
+Q(3,3) = 100
+
+
+R = 1;
+K = lqr(A,B,Q,R)
+
+
+
+Ac = (A-B*K);
+Bc = B;
+Cc = C;
+Dc = D;
+
+states = {'x' 'x_dot' 'phi' 'phi_dot'};
+inputs = {'r'};
+outputs = {'x'; 'phi'};
+
+sys_cl = ss(Ac,Bc,Cc,Dc,'statename',states,'inputname',inputs,'outputname',outputs);
+
+t = 0:0.01:10;
+r =0.2*ones(size(t));
+
+Cn = [1 0 0 0];
+sys_ss = ss(A,B,Cn,0);
+Nbar = rscale(sys_ss,K);
+
+[y,t,x]=lsim(sys_cl,r,t);
+[AX,H1,H2] = plotyy(t,y(:,1),t,y(:,2),'plot');
+set(get(AX(1),'Ylabel'),'String','cart position (m)')
+set(get(AX(2),'Ylabel'),'String','pendulum angle (radians)')
+title('Step Response with LQR Control')
+
+```
+
+![](https://ws1.sinaimg.cn/large/006tNbRwgy1fxkan1mmf2j30v40nct9q.jpg)
+Simscape仿真:
+![](https://ws2.sinaimg.cn/large/006tNbRwgy1fxkaxaoa59j30v40m0jsl.jpg)
+![](https://ws2.sinaimg.cn/large/006tNbRwgy1fxkb065i5xg30i008emzk.gif)
+
+改变$$R$$和$$Q$$能得到不同的效果.
+
